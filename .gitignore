@@ -1,0 +1,14 @@
+.gradle
+build
+gradle.properties
+.idea/
+.project
+.settings/
+.classpath
+.vscode
+nbactions.xml
+nb-configuration.xml
+nbproject/
+bin
+.claude/
+.DS_Store
