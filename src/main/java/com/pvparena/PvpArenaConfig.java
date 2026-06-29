@@ -28,4 +28,14 @@ public interface PvpArenaConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+		keyName = "loadouts",
+		name = "Loadouts",
+		description = "Save named setups (worn, inventory, spellbook) grouped by build, and load one to highlight what to add or remove. Sidebar panel shows on PvP Arena worlds."
+	)
+	default boolean loadouts()
+	{
+		return true;
+	}
 }
