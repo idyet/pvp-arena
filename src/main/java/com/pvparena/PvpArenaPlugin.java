@@ -1,7 +1,12 @@
 package com.pvparena;
 
 import com.google.inject.Provides;
+import java.awt.Toolkit;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -436,6 +441,84 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 			loadoutManager.delete(loadout.getId());
 			refreshPanel();
 		}
+	}
+
+	/**
+	 * Export. Pure EDT: clipboard + config only, no client thread (unlike
+	 * {@link #saveCurrentSetup}). Availability is gated only incidentally by panel
+	 * visibility (PvP Arena worlds), see ADR-0004.
+	 */
+	@Override
+	public void copyCode(Loadout loadout)
+	{
+		if (loadout == null)
+		{
+			return;
+		}
+		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
+			new StringSelection(LoadoutCodec.encode(loadout)), null);
+		JOptionPane.showMessageDialog(panel,
+			"Copied loadout code for \"" + loadout.getName() + "\" to your clipboard.",
+			"Loadout code copied", JOptionPane.INFORMATION_MESSAGE);
+	}
+
+	/** Import. Reads the clipboard, decodes, and adds a fresh loadout in the encoded build. */
+	@Override
+	public void importCode()
+	{
+		final String raw = readClipboard();
+		if (raw == null || raw.trim().isEmpty())
+		{
+			JOptionPane.showMessageDialog(panel,
+				"Couldn't read a loadout code from your clipboard. Copy one and try again.",
+				"Import loadout code", JOptionPane.WARNING_MESSAGE);
+			return;
+		}
+
+		final Loadout decoded;
+		try
+		{
+			decoded = LoadoutCodec.decode(raw);
+		}
+		catch (LoadoutCodecException e)
+		{
+			JOptionPane.showMessageDialog(panel, importErrorMessage(e.getReason()),
+				"Import loadout code", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+
+		final String name = decoded.getName() == null || decoded.getName().trim().isEmpty()
+			? Build.labelFor(decoded.getBuild()) + " loadout"
+			: decoded.getName();
+		loadoutManager.add(decoded, name);
+		refreshPanel();
+	}
+
+	private String readClipboard()
+	{
+		try
+		{
+			final Object data = Toolkit.getDefaultToolkit().getSystemClipboard()
+				.getData(DataFlavor.stringFlavor);
+			return data == null ? null : data.toString();
+		}
+		catch (UnsupportedFlavorException | IOException | IllegalStateException e)
+		{
+			// Non-text clipboard, or the clipboard was busy: treat as nothing to import.
+			log.debug("Clipboard read failed", e);
+			return null;
+		}
+	}
+
+	private static String importErrorMessage(LoadoutCodecException.Reason reason)
+	{
+		if (reason == LoadoutCodecException.Reason.NEWER_VERSION)
+		{
+			return "This loadout code was made with a newer version of the plugin. "
+				+ "Update PvP Arena to import it.";
+		}
+		return "That doesn't look like a valid loadout code. Copy the full code "
+			+ "(it starts with \"pvpa-loadout-\") and try again.";
 	}
 
 	@Override

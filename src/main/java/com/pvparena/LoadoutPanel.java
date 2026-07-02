@@ -8,6 +8,7 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Graphics2D;
 import java.awt.GridBagLayout;
+import java.awt.GridLayout;
 import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
@@ -77,6 +78,12 @@ class LoadoutPanel extends PluginPanel
 
 		void delete(Loadout loadout);
 
+		/** Export: copy this loadout to the clipboard as a Loadout code. */
+		void copyCode(Loadout loadout);
+
+		/** Import: mint a loadout from a Loadout code on the clipboard. */
+		void importCode();
+
 		int unlocatableCount(Loadout active);
 	}
 
@@ -84,6 +91,8 @@ class LoadoutPanel extends PluginPanel
 	private final Actions actions;
 
 	private final JButton saveButton = new JButton("Save current setup");
+	/** Always enabled (unlike {@code saveButton}); import touches only clipboard + config. */
+	private final JButton importButton = new JButton("Import loadout code");
 	private final JPanel groups = new JPanel();
 	private final Map<Integer, Boolean> collapsed = new HashMap<>();
 
@@ -96,7 +105,13 @@ class LoadoutPanel extends PluginPanel
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
 		saveButton.addActionListener(e -> actions.saveCurrentSetup());
-		add(saveButton, BorderLayout.NORTH);
+		importButton.setToolTipText("Create a loadout from a code on your clipboard");
+		importButton.addActionListener(e -> actions.importCode());
+
+		final JPanel top = new JPanel(new GridLayout(0, 1, 0, 4));
+		top.add(saveButton);
+		top.add(importButton);
+		add(top, BorderLayout.NORTH);
 
 		groups.setLayout(new BoxLayout(groups, BoxLayout.Y_AXIS));
 		add(groups, BorderLayout.CENTER);
@@ -271,6 +286,10 @@ class LoadoutPanel extends PluginPanel
 		update.setEnabled(actions.isBuilderOpen());
 		update.addActionListener(e -> actions.updateFromSetup(loadout));
 		popup.add(update);
+
+		final JMenuItem copyCode = new JMenuItem("Copy loadout code");
+		copyCode.addActionListener(e -> actions.copyCode(loadout));
+		popup.add(copyCode);
 
 		final JMenuItem delete = new JMenuItem("Delete");
 		delete.addActionListener(e -> actions.delete(loadout));

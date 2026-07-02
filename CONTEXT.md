@@ -26,6 +26,13 @@ whichever panel is currently shown. The artifact this feature manages; the panel
 lists them is titled "Loadouts".
 _Avoid_: saved setup, preset, template.
 
+**Loadout code**:
+The portable, serialized form of a single [[Loadout]]: a text string carried on the
+system clipboard, produced by **Export** and consumed by **Import**. A third state
+distinct from a live [[Setup]] and a persisted [[Loadout]] — a Loadout that has left
+the plugin to be shared. Clipboard-only (no files). At most one Loadout per code.
+_Avoid_: share code, export string, preset code.
+
 **Setup builder**:
 An arena interface where a player assembles a [[Setup]]. Two exist: the Staging-area
 Supplies screen (`PvpArenaStagingareaSupplies`) and the Unranked-duel screen
