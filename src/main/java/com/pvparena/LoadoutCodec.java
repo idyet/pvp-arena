@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import javax.inject.Inject;
+import javax.inject.Singleton;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -18,6 +20,7 @@ import lombok.NoArgsConstructor;
  * <p>Item ids are trusted, not validated against the item cache: unplaceable items fail soft
  * downstream at load time (via {@code unlocatableCount}), exactly like a hand-built loadout.
  */
+@Singleton
 final class LoadoutCodec
 {
 	/** Magic prefix, minus the version integer and colon: {@code pvpa-loadout-v}. */
@@ -25,14 +28,17 @@ final class LoadoutCodec
 	/** The schema version this plugin writes and reads. */
 	static final int VERSION = 1;
 
-	private static final Gson GSON = new Gson();
+	/** The client's shared {@link Gson} (plugin hub forbids fresh instances). */
+	private final Gson gson;
 
-	private LoadoutCodec()
+	@Inject
+	LoadoutCodec(Gson gson)
 	{
+		this.gson = gson;
 	}
 
 	/** Produces the shareable code for {@code loadout} ({@code id}/{@code savedAt} are omitted). */
-	static String encode(Loadout loadout)
+	String encode(Loadout loadout)
 	{
 		final LoadoutCode code = new LoadoutCode();
 		code.setName(loadout.getName());
@@ -41,7 +47,7 @@ final class LoadoutCodec
 		code.setWorn(loadout.getWorn());
 		code.setInventory(loadout.getInventory());
 
-		final byte[] json = GSON.toJson(code).getBytes(StandardCharsets.UTF_8);
+		final byte[] json = gson.toJson(code).getBytes(StandardCharsets.UTF_8);
 		return PREFIX + VERSION + ':' + Base64.getEncoder().encodeToString(json);
 	}
 
@@ -51,7 +57,7 @@ final class LoadoutCodec
 	 * with {@link LoadoutCodecException.Reason#NEWER_VERSION} for a recognized-but-newer
 	 * version, or {@link LoadoutCodecException.Reason#INVALID} for anything else.
 	 */
-	static Loadout decode(String raw) throws LoadoutCodecException
+	Loadout decode(String raw) throws LoadoutCodecException
 	{
 		if (raw == null)
 		{
@@ -123,7 +129,7 @@ final class LoadoutCodec
 		}
 	}
 
-	private static LoadoutCode parse(String payload) throws LoadoutCodecException
+	private LoadoutCode parse(String payload) throws LoadoutCodecException
 	{
 		final byte[] json;
 		try
@@ -138,7 +144,7 @@ final class LoadoutCodec
 		final LoadoutCode code;
 		try
 		{
-			code = GSON.fromJson(new String(json, StandardCharsets.UTF_8), LoadoutCode.class);
+			code = gson.fromJson(new String(json, StandardCharsets.UTF_8), LoadoutCode.class);
 		}
 		catch (JsonSyntaxException e)
 		{

@@ -71,6 +71,9 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 	private LoadoutManager loadoutManager;
 
 	@Inject
+	private LoadoutCodec loadoutCodec;
+
+	@Inject
 	private SetupReader setupReader;
 
 	@Inject
@@ -456,7 +459,7 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 			return;
 		}
 		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
-			new StringSelection(LoadoutCodec.encode(loadout)), null);
+			new StringSelection(loadoutCodec.encode(loadout)), null);
 		JOptionPane.showMessageDialog(panel,
 			"Copied loadout code for \"" + loadout.getName() + "\" to your clipboard.",
 			"Loadout code copied", JOptionPane.INFORMATION_MESSAGE);
@@ -478,7 +481,7 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 		final Loadout decoded;
 		try
 		{
-			decoded = LoadoutCodec.decode(raw);
+			decoded = loadoutCodec.decode(raw);
 		}
 		catch (LoadoutCodecException e)
 		{

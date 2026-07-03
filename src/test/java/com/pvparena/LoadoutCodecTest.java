@@ -1,5 +1,6 @@
 package com.pvparena;
 
+import com.google.gson.Gson;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Base64;
@@ -18,6 +19,8 @@ public class LoadoutCodecTest
 
 	private static final String ANCIENT = "Ancient Magicks";
 
+	private final LoadoutCodec codec = new LoadoutCodec(new Gson());
+
 	private static Loadout sample()
 	{
 		final Loadout l = new Loadout();
@@ -35,7 +38,7 @@ public class LoadoutCodecTest
 	public void roundTripPreservesContent() throws LoadoutCodecException
 	{
 		final Loadout original = sample();
-		final Loadout decoded = LoadoutCodec.decode(LoadoutCodec.encode(original));
+		final Loadout decoded = codec.decode(codec.encode(original));
 
 		assertEquals(original.getName(), decoded.getName());
 		assertEquals(original.getBuild(), decoded.getBuild());
@@ -48,7 +51,7 @@ public class LoadoutCodecTest
 	public void decodeMintsFreshIdentity() throws LoadoutCodecException
 	{
 		// id/savedAt are not carried; the caller (LoadoutManager.add) mints them.
-		final Loadout decoded = LoadoutCodec.decode(LoadoutCodec.encode(sample()));
+		final Loadout decoded = codec.decode(codec.encode(sample()));
 		assertNull(decoded.getId());
 		assertEquals(0L, decoded.getSavedAt());
 	}
@@ -58,14 +61,14 @@ public class LoadoutCodecTest
 	{
 		final Loadout original = sample();
 		original.setSpellbook(null);
-		final Loadout decoded = LoadoutCodec.decode(LoadoutCodec.encode(original));
+		final Loadout decoded = codec.decode(codec.encode(original));
 		assertNull(decoded.getSpellbook());
 	}
 
 	@Test
 	public void encodedCodeCarriesTheVersionedPrefix()
 	{
-		assertTrue(LoadoutCodec.encode(sample()).startsWith("pvpa-loadout-v1:"));
+		assertTrue(codec.encode(sample()).startsWith("pvpa-loadout-v1:"));
 	}
 
 	@Test
@@ -98,16 +101,16 @@ public class LoadoutCodecTest
 		final Loadout empty = new Loadout();
 		empty.setName("empty");
 		// No worn and no inventory -> nothing to share.
-		expectInvalid(LoadoutCodec.encode(empty));
+		expectInvalid(codec.encode(empty));
 	}
 
 	@Test
 	public void newerVersionIsDistinctFromInvalid()
 	{
-		final String v2 = LoadoutCodec.encode(sample()).replaceFirst("^pvpa-loadout-v1:", "pvpa-loadout-v2:");
+		final String v2 = codec.encode(sample()).replaceFirst("^pvpa-loadout-v1:", "pvpa-loadout-v2:");
 		try
 		{
-			LoadoutCodec.decode(v2);
+			codec.decode(v2);
 			fail("expected a newer-version rejection");
 		}
 		catch (LoadoutCodecException e)
@@ -121,11 +124,11 @@ public class LoadoutCodecTest
 		return Base64.getEncoder().encodeToString(s.getBytes(StandardCharsets.UTF_8));
 	}
 
-	private static void expectInvalid(String raw)
+	private void expectInvalid(String raw)
 	{
 		try
 		{
-			LoadoutCodec.decode(raw);
+			codec.decode(raw);
 			fail("expected an invalid-code rejection for: " + raw);
 		}
 		catch (LoadoutCodecException e)
