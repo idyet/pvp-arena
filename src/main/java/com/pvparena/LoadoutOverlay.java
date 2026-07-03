@@ -33,6 +33,8 @@ import net.runelite.client.ui.overlay.OverlayPosition;
  * {@link LoadoutManager#getActive() loadout is active}: green outline (covering the
  * whole catalog option, icon + text) with a required-count when more than one is
  * needed, and a red outline over excess/unwanted setup items and a differing spellbook.
+ * While the catalog is filtered ({@link LoadoutManager#isFilterOn()}) the to-add outline
+ * is suppressed — every visible row already belongs to the loadout — leaving just the count.
  * Re-evaluates every frame, so counts fall and outlines clear as the player adds items.
  * Auto-clears the active loadout on full match. Overlay-only, fully reversible.
  */
@@ -134,6 +136,10 @@ class LoadoutOverlay extends Overlay
 		g.setStroke(STROKE);
 
 		// To add: green outline over the whole option + count (only when >1), clipped to list.
+		// While the catalog is filtered to just the loadout's items the outline is redundant
+		// (every visible row already belongs to the loadout) and only clutters the list, so
+		// suppress it there and keep the count alone.
+		final boolean filtered = manager.isFilterOn();
 		final Set<Integer> located = new HashSet<>();
 		final Widget list = client.getWidget(screen.itemsList[build]);
 		final Shape oldClip = g.getClip();
@@ -147,15 +153,23 @@ class LoadoutOverlay extends Overlay
 			if (need > 0 && row.widget != null && !row.widget.isHidden())
 			{
 				located.add(row.itemId);
-				final Rectangle bounds = optionBounds(row.widget);
-				if (bounds != null)
+				final Rectangle rowBounds = row.widget.getBounds();
+				if (rowBounds == null)
 				{
-					g.setColor(ADD_COLOR);
-					g.draw(bounds);
-					if (need > 1)
+					continue;
+				}
+				if (!filtered)
+				{
+					final Rectangle bounds = optionBounds(row.widget);
+					if (bounds != null)
 					{
-						drawCount(g, row.widget.getBounds(), need);
+						g.setColor(ADD_COLOR);
+						g.draw(bounds);
 					}
+				}
+				if (need > 1)
+				{
+					drawCount(g, rowBounds, need);
 				}
 			}
 		}
