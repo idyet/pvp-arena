@@ -23,9 +23,15 @@ import net.runelite.client.util.Text;
  * Feature 2 — spellbook mismatch.
  *
  * <p>While the unranked duel screen is open on a PvP Arena world and the local player's
- * active-loadout spellbook differs from the opponent's, draws a red outline on the
- * player's spellbook display, the opponent's spellbook display, and the confirm button,
- * plus a warning icon on the confirm button.
+ * spellbook differs from the opponent's, marks the player's spellbook display with a
+ * warning icon (right-aligned inside it), and draws a red outline on the opponent's
+ * spellbook display and the confirm button, plus the same warning icon on the confirm
+ * button.
+ *
+ * <p>The player side is deliberately <em>not</em> outlined red: {@link LoadoutOverlay}
+ * already outlines that same spellbook widget red for a loadout-vs-setup mismatch, so a
+ * red outline here would be indistinguishable. The warning icon keeps the two causes
+ * visually distinct.
  *
  * <p>The comparison is on the <b>display label text</b> (e.g. {@code "Ancient Magicks"}),
  * not varbit values: the loadout spellbook varbit uses a non-standard encoding
@@ -93,8 +99,10 @@ class SpellbookMismatchOverlay extends Overlay
 		g.setColor(OUTLINE_COLOR);
 
 		// The player's and opponent's displays live on separate tabs and are never
-		// visible at once; outline() skips hidden widgets, so each highlights on its tab.
-		outline(g, player);
+		// visible at once; each mark skips hidden widgets, so it shows on its own tab.
+		// The player side gets the warning icon (not a red outline) to stay distinct
+		// from LoadoutOverlay's red loadout-mismatch outline on the same widget.
+		drawWarningIcon(g, player);
 		outline(g, opponent);
 		outline(g, confirm);
 		drawWarningIcon(g, confirm);
@@ -177,20 +185,20 @@ class SpellbookMismatchOverlay extends Overlay
 		}
 	}
 
-	private void drawWarningIcon(Graphics2D g, Widget confirm)
+	/** Draws the warning icon right-aligned inside {@code widget}, vertically centered. */
+	private void drawWarningIcon(Graphics2D g, Widget widget)
 	{
-		if (warningIcon == null || confirm == null || confirm.isHidden())
+		if (warningIcon == null || widget == null || widget.isHidden())
 		{
 			return;
 		}
 
-		final Rectangle bounds = confirm.getBounds();
+		final Rectangle bounds = widget.getBounds();
 		if (bounds == null)
 		{
 			return;
 		}
 
-		// Right-aligned with padding, vertically centered on the confirm button.
 		final int x = bounds.x + bounds.width - warningIcon.getWidth() - ICON_PADDING_RIGHT;
 		final int y = bounds.y + (bounds.height - warningIcon.getHeight()) / 2;
 		g.drawImage(warningIcon, x, y, null);
