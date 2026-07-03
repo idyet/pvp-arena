@@ -280,7 +280,7 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 			return;
 		}
 		final Widget w = event.getWidget();
-		if (ArenaWidgets.isSeekWidget(event.getWidgetId())
+		if (ArenaWidgets.isSeekWidget(event.getParam1())
 			|| (w != null && ArenaWidgets.isSeekWidget(w.getId())))
 		{
 			loadoutManager.setFilterOn(false);
