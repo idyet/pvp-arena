@@ -5,6 +5,38 @@ plugin does nothing outside PvP Arena worlds.
 
 ## Features
 
+### Loadouts (default on)
+
+Save your duel setups and rebuild them in seconds. A **Loadouts** panel appears in
+the RuneLite sidebar whenever you're on a PvP Arena world.
+
+![Saving, loading, and sharing a loadout](loadout.gif)
+
+- **Save current setup** — with a setup screen open (staging-area supplies or the
+  unranked duel screen), snapshot your worn gear, inventory items + quantities, and
+  spellbook as a named loadout.
+- Loadouts are grouped by build — **Max/Med**, **Zerker**, **Pure** — but not locked
+  to it: load any loadout while any build's panel is showing.
+- **Click a loadout to load it.** The plugin compares it against your live setup and
+  paints the screen so you can rebuild by eye:
+  - **Green outline + count** on catalog items you still need to add (the count is how
+    many more are required).
+  - **Red outline** on inventory/worn items to discard (only the surplus over the
+    loadout, not every copy) and on your spellbook selector if it differs.
+  - Highlights update as you go; when your setup matches, it shows **"Loadout matched"**
+    and stops comparing automatically.
+- **Filter** (funnel icon) — narrow the catalog to just the active loadout's items so
+  you're not scrolling past everything else.
+- **Stop** (square icon) — stop comparing at any time.
+- **Options** (⋯ menu) — Rename, Update from current setup, Copy loadout code, Delete.
+
+**Share loadouts.** Export a loadout to your clipboard as a portable **loadout code**
+with *Copy loadout code*, and recreate it anywhere with **Import loadout code**. A code
+is a single opaque token (safe to paste into Discord) — no files involved.
+
+Loadouts are stored once per RuneLite install and shared across all your accounts, since
+PvP Arena normalizes stats to the build preset — your library follows you everywhere.
+
 ### Shift-click discard (default on)
 
 When building a loadout, a plain left-click on an item can accidentally **Discard**
@@ -32,5 +64,6 @@ side switches to matching spellbooks.
 
 ## Config
 
-- **Shift-click discard** — toggle Feature 1 (default on).
-- **Highlight spellbook mismatch** — toggle Feature 2 (default on).
+- **Loadouts** — toggle the Loadouts panel and its load highlights (default on).
+- **Shift-click discard** — toggle shift-gated discard (default on).
+- **Highlight spellbook mismatch** — toggle the spellbook-mismatch warning (default on).

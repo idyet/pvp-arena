@@ -12,3 +12,6 @@ nbproject/
 bin
 .claude/
 .DS_Store
+
+# Raw screen-recording source for loadout.gif — keep the gif, not the source video
+*.mov
