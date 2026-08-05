@@ -119,6 +119,50 @@ public class LoadoutCodecTest
 		}
 	}
 
+	@Test
+	public void encodeCollapsesDuplicateInventoryItems() throws LoadoutCodecException
+	{
+		// Four brews across four inventory slots (as SetupReader captures them) must serialize
+		// as a single qty-4 entry, and the decoded inventory reflects the collapse.
+		final Loadout spread = new Loadout();
+		spread.setName("Spread");
+		spread.setInventory(Arrays.asList(
+			new Loadout.InvItem(BREW, 1),
+			new Loadout.InvItem(PPOT, 1),
+			new Loadout.InvItem(BREW, 1),
+			new Loadout.InvItem(BREW, 1),
+			new Loadout.InvItem(BREW, 1)));
+
+		final Loadout decoded = codec.decode(codec.encode(spread));
+
+		// First-seen order preserved: brew (seen first) then prayer potion.
+		assertEquals(Arrays.asList(
+			new Loadout.InvItem(BREW, 4),
+			new Loadout.InvItem(PPOT, 1)), decoded.getInventory());
+	}
+
+	@Test
+	public void collapsePreservesBagTotals() throws LoadoutCodecException
+	{
+		final Loadout spread = new Loadout();
+		spread.setName("Spread");
+		spread.setInventory(Arrays.asList(
+			new Loadout.InvItem(BREW, 1),
+			new Loadout.InvItem(BREW, 1),
+			new Loadout.InvItem(PPOT, 4)));
+
+		// Matching goes through bag(); collapsing must not change it.
+		assertEquals(spread.bag(), codec.decode(codec.encode(spread)).bag());
+	}
+
+	@Test
+	public void encodeIsDeterministic()
+	{
+		// Byte-identical codes for the same loadout (LinkedHashMap first-seen order).
+		final Loadout original = sample();
+		assertEquals(codec.encode(original), codec.encode(original));
+	}
+
 	private static String base64(String s)
 	{
 		return Base64.getEncoder().encodeToString(s.getBytes(StandardCharsets.UTF_8));

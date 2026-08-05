@@ -88,6 +88,7 @@ class LoadoutManager
 		snapshot.setId(UUID.randomUUID().toString());
 		snapshot.setName(name);
 		snapshot.setSavedAt(System.currentTimeMillis());
+		snapshot.setInventory(Loadout.collapseInventory(snapshot.getInventory()));
 		cache.add(snapshot);
 		persist();
 		return snapshot;
@@ -124,7 +125,7 @@ class LoadoutManager
 			l.setBuild(snapshot.getBuild());
 			l.setSpellbook(snapshot.getSpellbook());
 			l.setWorn(snapshot.getWorn());
-			l.setInventory(snapshot.getInventory());
+			l.setInventory(Loadout.collapseInventory(snapshot.getInventory()));
 			l.setSavedAt(System.currentTimeMillis());
 			persist();
 		}

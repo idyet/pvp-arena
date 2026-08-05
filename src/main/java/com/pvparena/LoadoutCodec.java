@@ -45,7 +45,10 @@ final class LoadoutCodec
 		code.setBuild(loadout.getBuild());
 		code.setSpellbook(loadout.getSpellbook());
 		code.setWorn(loadout.getWorn());
-		code.setInventory(loadout.getInventory());
+		// Collapse defensively: loadouts persisted before this normalization existed still hold
+		// one entry per inventory slot, so this keeps their exported codes short too. A copy is
+		// produced (see Loadout.collapseInventory), so the cached loadout is never mutated.
+		code.setInventory(Loadout.collapseInventory(loadout.getInventory()));
 
 		final byte[] json = gson.toJson(code).getBytes(StandardCharsets.UTF_8);
 		return PREFIX + VERSION + ':' + Base64.getEncoder().encodeToString(json);
