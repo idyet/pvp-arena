@@ -2,10 +2,15 @@ package com.pvparena;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.zip.DataFormatException;
+import java.util.zip.Deflater;
+import java.util.zip.Inflater;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.Data;
@@ -25,8 +30,12 @@ final class LoadoutCodec
 {
 	/** Magic prefix, minus the version integer and colon: {@code pvpa-loadout-v}. */
 	static final String PREFIX = "pvpa-loadout-v";
-	/** The schema version this plugin writes and reads. */
-	static final int VERSION = 1;
+	/**
+	 * The schema version this plugin writes. Encode always emits this; decode still accepts every
+	 * released version back to {@code 1} (see ADR-0005). v1 payload is {@code Base64(JSON)};
+	 * v2 payload is {@code Base64(raw-DEFLATE(JSON))} of the same {@link LoadoutCode} envelope.
+	 */
+	static final int VERSION = 2;
 
 	/** The client's shared {@link Gson} (plugin hub forbids fresh instances). */
 	private final Gson gson;
@@ -51,7 +60,9 @@ final class LoadoutCodec
 		code.setInventory(Loadout.collapseInventory(loadout.getInventory()));
 
 		final byte[] json = gson.toJson(code).getBytes(StandardCharsets.UTF_8);
-		return PREFIX + VERSION + ':' + Base64.getEncoder().encodeToString(json);
+		// v2: raw DEFLATE the JSON before Base64 (ADR-0005). Deterministic for a fixed input, so
+		// the same loadout still produces a byte-identical code.
+		return PREFIX + VERSION + ':' + Base64.getEncoder().encodeToString(deflate(json));
 	}
 
 	/**
@@ -84,13 +95,17 @@ final class LoadoutCodec
 		{
 			throw new LoadoutCodecException(LoadoutCodecException.Reason.NEWER_VERSION);
 		}
-		if (version != VERSION)
+		if (version < 1)
 		{
-			// Unparseable or older-than-v1: no decode path exists, so it is simply invalid.
+			// Unparseable or zero: no decode path exists, so it is simply invalid.
 			throw invalid();
 		}
 
-		final LoadoutCode code = parse(s.substring(colon + 1));
+		// Every released version decodes to the same LoadoutCode envelope; only the byte pipeline
+		// differs. v1 is Base64(JSON); v2 adds a raw-DEFLATE layer under the Base64 (ADR-0005).
+		final byte[] payload = base64(s.substring(colon + 1));
+		final byte[] json = version == 1 ? payload : inflate(payload);
+		final LoadoutCode code = parseJson(json);
 
 		final boolean noWorn = code.getWorn() == null || code.getWorn().isEmpty();
 		final boolean noInventory = code.getInventory() == null || code.getInventory().isEmpty();
@@ -132,18 +147,20 @@ final class LoadoutCodec
 		}
 	}
 
-	private LoadoutCode parse(String payload) throws LoadoutCodecException
+	private static byte[] base64(String payload) throws LoadoutCodecException
 	{
-		final byte[] json;
 		try
 		{
-			json = Base64.getDecoder().decode(payload);
+			return Base64.getDecoder().decode(payload);
 		}
 		catch (IllegalArgumentException e)
 		{
 			throw invalid();
 		}
+	}
 
+	private LoadoutCode parseJson(byte[] json) throws LoadoutCodecException
+	{
 		final LoadoutCode code;
 		try
 		{
@@ -158,6 +175,60 @@ final class LoadoutCodec
 			throw invalid();
 		}
 		return code;
+	}
+
+	/** Raw DEFLATE (nowrap: no zlib header/checksum) at max level; deterministic for a fixed input. */
+	private static byte[] deflate(byte[] data)
+	{
+		final Deflater deflater = new Deflater(Deflater.BEST_COMPRESSION, true);
+		deflater.setInput(data);
+		deflater.finish();
+
+		final ByteArrayOutputStream out = new ByteArrayOutputStream(Math.max(32, data.length / 3));
+		final byte[] buf = new byte[2048];
+		while (!deflater.finished())
+		{
+			out.write(buf, 0, deflater.deflate(buf));
+		}
+		deflater.end();
+		return out.toByteArray();
+	}
+
+	/** Inverse of {@link #deflate}; a corrupt or truncated stream is an invalid code, not a crash. */
+	private static byte[] inflate(byte[] compressed) throws LoadoutCodecException
+	{
+		final Inflater inflater = new Inflater(true);
+		// A nowrap inflater needs one extra dummy byte past the end of the raw DEFLATE stream
+		// (a documented ZLIB requirement); without it a valid stream never reaches finished().
+		inflater.setInput(Arrays.copyOf(compressed, compressed.length + 1));
+
+		final ByteArrayOutputStream out = new ByteArrayOutputStream(Math.max(64, compressed.length * 3));
+		final byte[] buf = new byte[2048];
+		try
+		{
+			while (!inflater.finished())
+			{
+				final int n = inflater.inflate(buf);
+				if (n > 0)
+				{
+					out.write(buf, 0, n);
+				}
+				else if (!inflater.finished())
+				{
+					// No progress and not done: the stream is truncated or wants a dictionary.
+					throw invalid();
+				}
+			}
+		}
+		catch (DataFormatException e)
+		{
+			throw invalid();
+		}
+		finally
+		{
+			inflater.end();
+		}
+		return out.toByteArray();
 	}
 
 	private static LoadoutCodecException invalid()

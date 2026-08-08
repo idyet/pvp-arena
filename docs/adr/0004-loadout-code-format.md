@@ -29,7 +29,8 @@ contents — is accepted (arguably a feature: it discourages producing corrupt c
 
 **No gzip (for v1).** One loadout is a few dozen item IDs — sub-1KB JSON. Compression saves
 little and adds a decode branch. `java.util.zip` is available (no new dependency) if a future
-bulk format ever wants it; the version prefix leaves room to add it.
+bulk format ever wants it; the version prefix leaves room to add it. (Revisited: real loadouts
+proved larger than this premise, so v2 adds raw DEFLATE. See [[ADR-0005]].)
 
 **DTO decoupled from the internal `Loadout`.** Serializing `Loadout` directly would couple
 the wire format to the internal model: a field rename or a change to `WornItem`'s shape during
