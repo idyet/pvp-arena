@@ -230,4 +230,58 @@ class CatalogFilter
 		}
 		return -1;
 	}
+
+	/**
+	 * Item id of the catalog row an {@code Add} click targets, or -1. The clicked op hotspot
+	 * carries no item id (verified in-game: the icon is a separate widget sharing the row's
+	 * {@value #STRIDE}px band) and the menu entry's own item id is unset for this bespoke CC_OP,
+	 * so locate the row from the list component (the click's param1) and clicked child (param0),
+	 * then read the icon sibling — the same source {@link #applyFresh} groups rows by. Client
+	 * thread only; null/bounds-safe so a non-catalog click just yields -1.
+	 */
+	int clickedRowItemId(int listComponentId, int hotspotIndex)
+	{
+		final Widget list = client.getWidget(listComponentId);
+		if (list == null)
+		{
+			return -1;
+		}
+		final Widget[] kids = list.getDynamicChildren();
+		if (kids == null || hotspotIndex < 0 || hotspotIndex >= kids.length || kids[hotspotIndex] == null)
+		{
+			return -1;
+		}
+
+		final int rowY = kids[hotspotIndex].getOriginalY();
+		final int[] ys = new int[kids.length];
+		final int[] itemIds = new int[kids.length];
+		final boolean[] hidden = new boolean[kids.length];
+		for (int i = 0; i < kids.length; i++)
+		{
+			ys[i] = kids[i] == null ? Integer.MIN_VALUE : kids[i].getOriginalY();
+			itemIds[i] = kids[i] == null ? -1 : kids[i].getItemId();
+			hidden[i] = kids[i] == null || kids[i].isSelfHidden();
+		}
+		return itemIdSharingRow(rowY, ys, itemIds, hidden);
+	}
+
+	/**
+	 * Item id of the first visible item-bearing entry whose {@code ys[i]} equals {@code rowY}, or
+	 * -1. Confirmed in-game 2026-08-11: an {@code Add} click's param0 is the dense index of a bare
+	 * op hotspot (no item id) which shares its {@code originalY} with the row's icon widget; repack
+	 * moves a whole row's widgets together and hides non-loadout rows, so the clicked item is the
+	 * non-hidden icon on the same {@code originalY}. Factored out (pure) for unit tests: hidden rows
+	 * at a colliding Y must be skipped, and only one visible item can occupy a row.
+	 */
+	static int itemIdSharingRow(int rowY, int[] ys, int[] itemIds, boolean[] hidden)
+	{
+		for (int i = 0; i < itemIds.length; i++)
+		{
+			if (itemIds[i] > 0 && !hidden[i] && ys[i] == rowY)
+			{
+				return itemIds[i];
+			}
+		}
+		return -1;
+	}
 }

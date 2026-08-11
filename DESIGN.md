@@ -325,6 +325,48 @@ items**, so the player sees just what to add. Unlike everything else in Feature 
 > visible artifact is a possible 1-frame flicker when the game rebuilds before the next
 > `onClientTick` re-applies.
 
+### Optimistic add (kill the double-add)
+
+The filter set is built from `SetupReader.currentBag()`, which reads the owned-inventory
+grid (`_NINVENTORY`). That widget lags an item add by ~1 game tick (~600ms), so a filtered
+row lingers for that window and a fast second click adds an unwanted duplicate (pure excess
+for a qty-1 item). `PendingAdds` credits the click **optimistically** so the row clears on the
+next `ClientTick` (~1 frame) instead — but hiding the row a frame later cannot stop a click
+that already reached a still-visible row, so a click on an already-satisfied item is also
+**consumed** outright, which is what actually eliminates the double-add.
+
+- **`PendingAdds`** (pure, unit-tested like `LoadoutDiff` — no `Client`): `record(itemId)`
+  credits `+1`; `effectiveBag(currentBag)` merges surviving predictions onto the live read;
+  `clear()` forgets them. `onClientTick` diffs `effectiveBag(currentBag)` instead of the raw
+  bag — everything downstream (`filterOrder` → `CatalogFilter.maintain`) is unchanged.
+- **Record / block**: `onMenuOptionClicked` handles an `Add` catalog click (a bespoke `CC_OP`),
+  gated by `loadouts()` + `inPvpArena()` + `isFilterOn()` + the option string `"Add"`. The menu
+  entry's own `getItemId()` is **unset** for this op, so the clicked row's item id is resolved by
+  `CatalogFilter.clickedRowItemId(param1, param0)`: `param0` is the dense index of a bare op
+  hotspot sharing its `originalY` with the row's icon, so it returns the non-hidden icon on that
+  same `originalY` (confirmed in-game 2026-08-11). During the ~1-tick repack window after an add,
+  the just-clicked row moves/hides and live resolution fails, so a **stable `param0 → itemId`
+  cache** (invalidated when the list component changes) backstops a fast second click — the exact
+  case that produced the double-add. Skipped when the supply grid is full
+  (`inventoryItems().size() >= 28`), where the add can't land. When the target is already met —
+  `effectiveBag(currentBag)[item] >= want` (live read plus in-flight clicks) — the click is
+  **consumed** so the duplicate never reaches the game; otherwise it credits `+1`. `have` comes
+  from `effectiveBag` (not raw `pending`) so a game tick landing since the last `ClientTick` can't
+  double-count into a false block. Only fires while the filter is on; toggle it off to add extras
+  beyond the loadout target.
+- **Reconcile** (baseline-diff, no timeout): the real count is captured as the **baseline**
+  the first tick a prediction is live; each tick a prediction retires once the real read has
+  grown by at least the predicted amount since that baseline, else the shortfall is added
+  back. Real inventory is the source of truth and always catches up (every add lands except
+  full-grid, which is guarded), so predictions never stick.
+- **Cleared** wherever `CatalogFilter.clear()` fires (shared `clearFilter()`) plus on a
+  build (0/1/2) or active-loadout switch — a stale prediction is scoped to one inventory +
+  target. Full-match auto-clear and login-hop drain via the `active == null` clear path.
+
+> Trade-off: **simple full-skip** is not stackable-aware — topping up an already-held stack
+> on a full grid still lingers (rare). Removal **repacks**, so a fast next click may add a
+> *different* still-needed item early — never excess.
+
 ### Config
 
 One master toggle `loadouts` (default **true**) gating the whole feature (panel, save,
@@ -413,6 +455,12 @@ Loadouts (Feature 3):
 - [ ] Confirm worn ammo/quiver quantity is readable from its slot widget.
 - [ ] Confirm catalog item ids equal worn/inventory item ids (no variant surprises).
 - [ ] Confirm catalog highlight badges clip to the scroll viewport at various scales.
+- [x] Optimistic add: catalog left-click option string is `"Add"` (a `CC_OP`); the menu entry's
+      `getItemId()` is **unset**, so the row item id is resolved via `CatalogFilter.clickedRowItemId`
+      (row `originalY` → non-hidden icon), with a `param0 → itemId` cache for the repack window.
+      (Confirmed in-game 2026-08-11.)
+- [ ] Optimistic add: confirm the supply-grid capacity is 28 for the full-skip check, and
+      that fast double-clicks no longer add an unwanted duplicate.
 
 ## Key constants reference
 

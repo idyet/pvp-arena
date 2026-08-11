@@ -9,6 +9,7 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -49,6 +50,11 @@ import net.runelite.client.util.ImageUtil;
 )
 public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 {
+	/** Left-click add-one option on an arena catalog row (confirmed in-game 2026-08-11: "Add", a CC_OP). */
+	private static final String ADD_ONE = "Add";
+	/** Arena supply grid capacity for the optimistic-add full check (VERIFY in-game: 28 slots). */
+	private static final int INVENTORY_CAPACITY = 28;
+
 	@Inject
 	private Client client;
 
@@ -80,6 +86,9 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 	private CatalogFilter catalogFilter;
 
 	@Inject
+	private PendingAdds pendingAdds;
+
+	@Inject
 	private ItemManager itemManager;
 
 	@Inject
@@ -96,6 +105,19 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 	private volatile boolean builderOpen;
 	private String lastActiveId;
 	private int lastUnrankedProgress;
+
+	/** Build + loadout the current optimistic predictions belong to; a change invalidates them. */
+	private int pendingBuild = -1;
+	private String pendingActiveId;
+
+	/**
+	 * Stable {@code hotspot dense index (param0) -> catalog item id}, so a rapid second click on a
+	 * row can still be identified while that row is mid-repack and live resolution fails. Keyed only
+	 * by param0 because the catalog's item set is constant per list; invalidated when the list
+	 * component ({@link #lastCatalogList}) changes (build / screen switch).
+	 */
+	private final Map<Integer, Integer> catalogItemByHotspot = new HashMap<>();
+	private int lastCatalogList = -1;
 
 	@Provides
 	PvpArenaConfig provideConfig(ConfigManager configManager)
@@ -126,7 +148,7 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 		overlayManager.remove(spellbookMismatchOverlay);
 		overlayManager.remove(loadoutOverlay);
 		removeNav();
-		clientThread.invoke(catalogFilter::clear);
+		clientThread.invoke(this::clearFilter);
 		loadoutManager.clearActive();
 		panel = null;
 		builderOpen = false;
@@ -200,7 +222,7 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 	{
 		if (!config.loadouts() || !inPvpArena())
 		{
-			catalogFilter.clear();
+			clearFilter();
 			return;
 		}
 
@@ -208,7 +230,7 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 		final Loadout active = loadoutManager.getActive();
 		if (s == null || active == null)
 		{
-			catalogFilter.clear();
+			clearFilter();
 			return;
 		}
 
@@ -216,16 +238,27 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 
 		if (loadoutManager.isFilterOn())
 		{
+			// Predictions are scoped to one build + loadout; a switch to either makes them
+			// meaningless (a different inventory / target), so drop them before reconciling.
+			final String activeId = active.getId();
+			if (build != pendingBuild || !Objects.equals(activeId, pendingActiveId))
+			{
+				pendingAdds.clear();
+				pendingBuild = build;
+				pendingActiveId = activeId;
+			}
+
 			// Keep only rows the loadout still highlights (need > 0), same set as the green
-			// to-add outline; the catalog shrinks as the player adds items.
-			final Map<Integer, Integer> current = setupReader.currentBag(s, build);
+			// to-add outline; the catalog shrinks as the player adds items. Credit clicks
+			// optimistically so a just-added row clears this tick, not a game tick later.
+			final Map<Integer, Integer> current = pendingAdds.effectiveBag(setupReader.currentBag(s, build));
 			final LoadoutDiff diff = LoadoutDiff.compute(active.bag(), current,
 				active.getSpellbook(), setupReader.spellbookLabel(s, build));
 			catalogFilter.maintain(s, build, filterOrder(active, diff.toAdd().keySet()));
 		}
 		else
 		{
-			catalogFilter.clear();
+			clearFilter();
 		}
 	}
 
@@ -251,6 +284,19 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 		order.addAll(wearables);
 		order.addAll(rest);
 		return order;
+	}
+
+	/** Restores the catalog and forgets optimistic predictions together (they share a lifecycle). */
+	private void clearFilter()
+	{
+		catalogFilter.clear();
+		pendingAdds.clear();
+	}
+
+	/** Whether the shown build's supply grid is full, so an {@code Add} click can't land. */
+	private boolean inventoryFull(ArenaWidgets.Screen s, int build)
+	{
+		return setupReader.inventoryItems(s, build).size() >= INVENTORY_CAPACITY;
 	}
 
 	private boolean isEquipable(int itemId)
@@ -288,6 +334,66 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 		{
 			loadoutManager.setFilterOn(false);
 			refreshPanel();
+			return;
+		}
+
+		// Optimistic catalog add (Feature 3): an "Add" click won't reach the lagging
+		// _NINVENTORY read for ~1 game tick. Credit it now so the filtered row clears on the
+		// next ClientTick; and when the loadout target is already met (live read plus clicks
+		// still in flight), consume the click. The filter only hides the row a frame later, so
+		// consuming is what actually stops a fast second click on a not-yet-hidden row from
+		// double-adding. Skip when the supply grid is full, where the add can't land anyway.
+		// The op is a bespoke CC_OP whose menu-entry item id is unset, so resolve the row's item
+		// off the list widget (confirmed in-game 2026-08-11; see CatalogFilter#clickedRowItemId).
+		if (inPvpArena() && ADD_ONE.equals(event.getMenuOption()))
+		{
+			final int p0 = event.getParam0();
+			final int p1 = event.getParam1();
+			if (p1 != lastCatalogList)
+			{
+				catalogItemByHotspot.clear(); // catalog list rebuilt/switched: hotspot->item map is stale
+				lastCatalogList = p1;
+			}
+
+			int itemId = catalogFilter.clickedRowItemId(p1, p0);
+			if (itemId > 0)
+			{
+				catalogItemByHotspot.put(p0, itemId);
+			}
+			else
+			{
+				// The just-clicked row is mid-repack (its icon has moved/hidden) so live resolution
+				// fails; reuse the stable id cached from an earlier click on this same hotspot, so a
+				// rapid second click on a now-satisfied row is still recognised and consumed.
+				itemId = catalogItemByHotspot.getOrDefault(p0, -1);
+			}
+			if (itemId <= 0)
+			{
+				return; // couldn't resolve the clicked row's item: nothing to credit or block
+			}
+			final ArenaWidgets.Screen s = setupReader.openScreen();
+			final Loadout active = loadoutManager.getActive();
+			if (s == null || active == null)
+			{
+				return;
+			}
+			final int build = setupReader.activeBuild(s);
+			if (inventoryFull(s, build))
+			{
+				return; // add can't land: nothing to credit, no excess to block
+			}
+
+			final int want = active.bag().getOrDefault(itemId, 0);
+			// effectiveBag reconciles first, so a game tick landing since the last ClientTick
+			// (real grew, prediction not yet retired) can't double-count into a false block.
+			final int have = pendingAdds.effectiveBag(setupReader.currentBag(s, build))
+				.getOrDefault(itemId, 0);
+			if (want > 0 && have >= want)
+			{
+				event.consume(); // target already satisfied — block the duplicate add
+				return;
+			}
+			pendingAdds.record(itemId);
 		}
 	}
 
@@ -307,6 +413,9 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 		if (state == GameState.LOGIN_SCREEN || state == GameState.HOPPING)
 		{
 			loadoutManager.clearActive();
+			pendingAdds.clear(); // client thread; drop stale predictions across the hop
+			catalogItemByHotspot.clear();
+			lastCatalogList = -1;
 		}
 		updateNav();
 	}
@@ -380,7 +489,7 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 	public void stop()
 	{
 		loadoutManager.clearActive();
-		clientThread.invoke(catalogFilter::clear);
+		clientThread.invoke(this::clearFilter);
 		refreshPanel();
 	}
 
