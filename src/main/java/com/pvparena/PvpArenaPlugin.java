@@ -251,7 +251,7 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 			// Keep only rows the loadout still highlights (need > 0), same set as the green
 			// to-add outline; the catalog shrinks as the player adds items. Credit clicks
 			// optimistically so a just-added row clears this tick, not a game tick later.
-			final Map<Integer, Integer> current = pendingAdds.effectiveBag(setupReader.currentBag(s, build));
+			final Map<Integer, Integer> current = pendingAdds.effectiveBag(setupReader.currentBag(s, build), client.getTickCount());
 			final LoadoutDiff diff = LoadoutDiff.compute(active.bag(), current,
 				active.getSpellbook(), setupReader.spellbookLabel(s, build));
 			catalogFilter.maintain(s, build, filterOrder(active, diff.toAdd().keySet()));
@@ -386,14 +386,14 @@ public class PvpArenaPlugin extends Plugin implements LoadoutPanel.Actions
 			final int want = active.bag().getOrDefault(itemId, 0);
 			// effectiveBag reconciles first, so a game tick landing since the last ClientTick
 			// (real grew, prediction not yet retired) can't double-count into a false block.
-			final int have = pendingAdds.effectiveBag(setupReader.currentBag(s, build))
+			final int have = pendingAdds.effectiveBag(setupReader.currentBag(s, build), client.getTickCount())
 				.getOrDefault(itemId, 0);
 			if (want > 0 && have >= want)
 			{
 				event.consume(); // target already satisfied — block the duplicate add
 				return;
 			}
-			pendingAdds.record(itemId);
+			pendingAdds.record(itemId, client.getTickCount());
 		}
 	}
 

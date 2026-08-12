@@ -335,10 +335,11 @@ next `ClientTick` (~1 frame) instead — but hiding the row a frame later cannot
 that already reached a still-visible row, so a click on an already-satisfied item is also
 **consumed** outright, which is what actually eliminates the double-add.
 
-- **`PendingAdds`** (pure, unit-tested like `LoadoutDiff` — no `Client`): `record(itemId)`
-  credits `+1`; `effectiveBag(currentBag)` merges surviving predictions onto the live read;
-  `clear()` forgets them. `onClientTick` diffs `effectiveBag(currentBag)` instead of the raw
-  bag — everything downstream (`filterOrder` → `CatalogFilter.maintain`) is unchanged.
+- **`PendingAdds`** (pure, unit-tested like `LoadoutDiff` — no `Client`): `record(itemId, tick)`
+  credits `+1`; `effectiveBag(currentBag, tick)` merges surviving predictions onto the live read;
+  `clear()` forgets them. `onClientTick` diffs `effectiveBag(currentBag, tick)` instead of the raw
+  bag — everything downstream (`filterOrder` → `CatalogFilter.maintain`) is unchanged. The game
+  tick is `client.getTickCount()`, passed in so the class stays clock-free.
 - **Record / block**: `onMenuOptionClicked` handles an `Add` catalog click (a bespoke `CC_OP`),
   gated by `loadouts()` + `inPvpArena()` + `isFilterOn()` + the option string `"Add"`. The menu
   entry's own `getItemId()` is **unset** for this op, so the clicked row's item id is resolved by
@@ -354,18 +355,27 @@ that already reached a still-visible row, so a click on an already-satisfied ite
   from `effectiveBag` (not raw `pending`) so a game tick landing since the last `ClientTick` can't
   double-count into a false block. Only fires while the filter is on; toggle it off to add extras
   beyond the loadout target.
-- **Reconcile** (baseline-diff, no timeout): the real count is captured as the **baseline**
+- **Reconcile** (baseline-diff + TTL backstop): the real count is captured as the **baseline**
   the first tick a prediction is live; each tick a prediction retires once the real read has
-  grown by at least the predicted amount since that baseline, else the shortfall is added
-  back. Real inventory is the source of truth and always catches up (every add lands except
-  full-grid, which is guarded), so predictions never stick.
+  grown by at least the predicted amount since that baseline, else the shortfall is added back.
+  Every add lands (except full-grid, which is guarded), so this clears a normal add within ~1
+  tick. A prediction only *fails* to clear when the item is **removed again** before the read
+  catches up — `Discard`, the wipe/trash buttons, or a drag — a retraction the add-only diff
+  can't see. We deliberately do **not** infer removal from the read moving *down*: it dips
+  transiently while the grid rebuilds during rapid filling, and dropping a live prediction there
+  re-opens the double-add. Instead a **TTL** retires any prediction `TTL_TICKS` (2) game ticks
+  past its last click, so a removed row returns within ~2 ticks regardless of *how* it left — no
+  removal path needs its own hook. (`record` refreshes the TTL, so an actively-clicked stack
+  never expires mid-fill.)
 - **Cleared** wherever `CatalogFilter.clear()` fires (shared `clearFilter()`) plus on a
   build (0/1/2) or active-loadout switch — a stale prediction is scoped to one inventory +
   target. Full-match auto-clear and login-hop drain via the `active == null` clear path.
 
 > Trade-off: **simple full-skip** is not stackable-aware — topping up an already-held stack
 > on a full grid still lingers (rare). Removal **repacks**, so a fast next click may add a
-> *different* still-needed item early — never excess.
+> *different* still-needed item early — never excess. Removal healing is not instant: a removed
+> row reappears ~2 ticks (`TTL_TICKS`) later, since removal is detected by the add simply never
+> landing, not by a per-button hook.
 
 ### Config
 
@@ -459,8 +469,10 @@ Loadouts (Feature 3):
       `getItemId()` is **unset**, so the row item id is resolved via `CatalogFilter.clickedRowItemId`
       (row `originalY` → non-hidden icon), with a `param0 → itemId` cache for the repack window.
       (Confirmed in-game 2026-08-11.)
-- [ ] Optimistic add: confirm the supply-grid capacity is 28 for the full-skip check, and
-      that fast double-clicks no longer add an unwanted duplicate.
+- [ ] Optimistic add: confirm the supply-grid capacity is 28 for the full-skip check.
+- [x] Optimistic add: fast double-clicks no longer add an unwanted duplicate, and a removed row
+      (per-item `Discard` or the wipe/trash button) returns within ~2 game ticks via the TTL
+      backstop. (Confirmed in-game 2026-08-11.)
 
 ## Key constants reference
 
